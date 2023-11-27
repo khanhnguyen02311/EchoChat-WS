@@ -1,15 +1,15 @@
 syntax = "proto3";
 
-// option go_import_path = "github.com/khanhnguyen02311/EchoChat-WS/proto";
+option go_package = "github.com/khanhnguyen02311/EchoChat-WS";
 
 service Greeter {
-  rpc SayHello (HelloRequest) returns (HelloReply);
+  rpc PingPong (PingMessage) returns (PongMessage);
 }
 
-message HelloRequest {
-  string name = 1;
+message PingMessage {
+  string ping = 1;
 }
 
-message HelloReply {
-  string message = 1;
+message PongMessage {
+  string pong = 1;
 }

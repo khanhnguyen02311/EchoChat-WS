@@ -1,9 +1,9 @@
 package main
 
 import (
-	utils "EchoChatWS/utils"
 	"errors"
 	"github.com/gorilla/websocket"
+	utils "github.com/khanhnguyen02311/EchoChat-WS/utils"
 	"github.com/labstack/echo-contrib/echoprometheus"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"

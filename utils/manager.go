@@ -6,6 +6,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/sync/errgroup"
+	"io"
 	"net/http"
 	"strconv"
 )
@@ -94,11 +95,19 @@ func NewConnectionManager(e *echo.Echo) *ConnectionManager {
 
 func (manager *ConnectionManager) validateClient(token string) int {
 	//TODO: validate the input token
-	clientID, err := strconv.Atoi(token) // temporary
-	if err != nil {
+	resp, err := http.Post("http://localhost:8000/auth/token/validate?token="+token, "POST", nil)
+	if err != nil || resp.StatusCode != 200 {
+		fmt.Printf("Error validating token: %s\n", err.Error())
 		return 0
 	}
-	return clientID
+	defer resp.Body.Close()
+	if body, err := io.ReadAll(resp.Body); err != nil {
+		return 0
+	} else {
+		fmt.Printf("%s", body)
+		clientID, _ := strconv.Atoi(string(body))
+		return clientID
+	}
 }
 
 func (manager *ConnectionManager) AddConnection(conn *websocket.Conn, clientID int) *EchoChatConn {
