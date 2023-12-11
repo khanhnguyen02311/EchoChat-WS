@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+option go_package = "EchoChat-WS/proto";
+
+service EchoChatBE {
+  rpc ValidateToken(TokenValue) returns (AccountinfoValue) {}
+  rpc NewMessage(NewMessageValue) returns (NewMessageResult) {}
+}
+
+message TokenValue {
+  string token = 1;
+}
+
+message AccountinfoValue {
+  int32 id = 1;
+  string name = 2;
+  int32 identifier = 3;
+}
+
+message NewMessageValue {
+  int32 accountinfo_id = 1;
+  string accountinfo_name = 2;
+  string group_id = 3;
+  string content = 4;
+  string type = 5;
+}
+
+message NewMessageResult {
+  bool result = 1;
+  optional string error = 2;
+}
