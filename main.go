@@ -1,26 +1,37 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"github.com/gorilla/websocket"
-	utils "github.com/khanhnguyen02311/EchoChat-WS/utils"
+	"github.com/khanhnguyen02311/EchoChat-WS/components/db"
+	"github.com/khanhnguyen02311/EchoChat-WS/components/manager"
+	"github.com/khanhnguyen02311/EchoChat-WS/components/manager/message"
+	"github.com/khanhnguyen02311/EchoChat-WS/components/services/rabbitmq"
+	"github.com/khanhnguyen02311/EchoChat-WS/configurations"
 	"github.com/labstack/echo-contrib/echoprometheus"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"sync"
 )
 
 var (
-	e = echo.New()
-	m = utils.NewConnectionManager(e)
+	e *echo.Echo
+	m *manager.ConnectionManager
 )
 
-func handleMessage(c echo.Context, message *utils.InputMessage) {
-	err := m.SendToClient(message.Recipient, message.Type, utils.MsgStatusSuccess, message.Content)
-	if err != nil {
-		c.Logger().Error(err)
-	}
+func handleMessage(c echo.Context, msg *message.InputMessage) {
+	outputMsg := message.NewOutputMessage(msg.Type, message.MsgStatusSuccess, msg.Content)
+	m.SendToClient(msg.Recipient, outputMsg)
+	//err := m.SendToClient(msg.Recipient, outputMsg)
+	//if err != nil {
+	//	c.Logger().Error(err)
+	//}
 }
 
 func initWS(c echo.Context) error {
@@ -30,23 +41,43 @@ func initWS(c echo.Context) error {
 		c.Logger().Error(err)
 		return c.String(404, err.Error())
 	}
+	m.GetAllConnections()
 	defer m.RemoveConnection(conn)
 	for {
-		message, err := conn.ReadJSONMessage()
+		msg, err := conn.ReadJSONMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNoStatusReceived, websocket.CloseNormalClosure) {
 				c.Logger().Error(err)
 			}
 			break
 		}
-		go handleMessage(c, message)
+		go handleMessage(c, msg)
 	}
 	return nil
 }
 
 func main() {
-	//e := echo.New()
-	//m := manager.NewConnectionManager(e)
+	// Init context and environment variables
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := configurations.InitEnv(".env.dev"); err != nil {
+		fmt.Printf("Error loading environment variables: %s\n", err.Error())
+		return
+	}
+
+	// Init components
+	dbSession, err := db.NewScyllaSession()
+	if err != nil {
+		fmt.Println("Error connecting to ScyllaDB:", err.Error())
+		return
+	}
+	//dbSession.Test()
+	e = echo.New()
+	m = manager.NewConnectionManager(e, dbSession)
+	rmq, err := rabbitmq.NewRMQService()
+	if err != nil {
+		return
+	}
 
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
@@ -55,8 +86,30 @@ func main() {
 	e.GET("/metrics", echoprometheus.NewHandler())
 	e.GET("/ws", initWS)
 
-	if err := e.Start(":1323"); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatal(err)
+	// Start the RabbitMQ consumer and the Echo server
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go rmq.StartConsuming(ctx, m, &wg)
+	go func() {
+		if err := e.Start(":1323"); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatal(err)
+		}
+	}()
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt)
+	select {
+	case <-sig:
+		// Shutdown signal received, cancel the context to signal the RabbitMQ consumer to finish
+		fmt.Println("Shutting down...")
+		cancel()
+		rmq.Close()
+	}
+	// Wait for the processing goroutine to finish
+	wg.Wait()
+	// Gracefully shut down the Echo server
+	if err := e.Shutdown(context.Background()); err != nil {
+		e.Logger.Fatal(err.Error())
 	}
 }
 
