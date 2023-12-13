@@ -30,6 +30,16 @@ func (h NotificationHandler) AddNotification(notification *dbmodels.Notification
 	return nil
 }
 
+func (h NotificationHandler) AddNotifications(accountinfoIDs []int, notification *dbmodels.Notification) {
+	for _, id := range accountinfoIDs {
+		notification.AccountinfoID = id
+		err := h.db.Session.Query(h.db.Tables.NotificationTable.Insert()).BindStruct(notification).ExecRelease()
+		if err != nil {
+			fmt.Println("An error occurred while inserting Notification", err.Error())
+		}
+	}
+}
+
 func (h NotificationHandler) AddNotificationSeen(notificationSeen *dbmodels.NotificationSeen) error {
 	err := h.db.Session.Query(h.db.Tables.NotificationSeenTable.Insert()).BindStruct(notificationSeen).ExecRelease()
 	if err != nil {

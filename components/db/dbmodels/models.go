@@ -7,6 +7,15 @@ import (
 )
 
 var (
+	DBMessageType      = []string{"Message", "File", "Event", "Other"}
+	DBNotificationType = []string{"GroupEvent", "GroupRequest", "Other"}
+
+	groupMetadata = table.Metadata{
+		Name:    "group",
+		Columns: []string{"id", "name", "description", "visibility", "time_created"},
+		PartKey: []string{"id"},
+		SortKey: []string{},
+	}
 	participantByGroupMetadata = table.Metadata{
 		Name:    "participant_by_group",
 		Columns: []string{"group_id", "time_created", "accountinfo_id", "notify", "role"},
@@ -46,6 +55,7 @@ type ScyllaDBTables struct {
 	MessageByGroupTable     *table.Table
 	MessageByAccountTable   *table.Table
 	ParticipantByGroupTable *table.Table
+	GroupTable              *table.Table
 }
 
 func InitScyllaDBTables() *ScyllaDBTables {
@@ -55,25 +65,16 @@ func InitScyllaDBTables() *ScyllaDBTables {
 		MessageByGroupTable:     table.New(messageByGroupMetadata),
 		MessageByAccountTable:   table.New(messageByAccountMetadata),
 		ParticipantByGroupTable: table.New(participantByGroupMetadata),
+		GroupTable:              table.New(groupMetadata),
 	}
 }
 
-type Notification struct {
-	AccountinfoID       int        `db:"accountinfo_id" json:"accountinfo_id"`
-	Type                string     `db:"type" json:"type"`
-	TimeCreated         time.Time  `db:"time_created" json:"time_created"`
-	GroupID             gocql.UUID `db:"group_id" json:"group_id"`
-	AccountinfoIDSender int        `db:"accountinfo_id_sender" json:"accountinfo_id_sender"`
-	Content             string     `db:"content" json:"content"`
-}
-
-type NotificationSeen struct {
-	AccountinfoID int        `db:"accountinfo_id" json:"accountinfo_id"`
-	Type          string     `db:"type" json:"type"`
-	GroupID       gocql.UUID `db:"group_id" json:"group_id"`
-	TimeCreated   time.Time  `db:"time_created" json:"time_created"`
-	TimeSeen      time.Time  `db:"time_seen" json:"time_seen"`
-	Content       string     `db:"content" json:"content"`
+type Group struct {
+	ID          gocql.UUID `db:"id" json:"id"`
+	Name        string     `db:"name" json:"name"`
+	Description string     `db:"description" json:"description"`
+	Visibility  string     `db:"visibility" json:"visibility"`
+	TimeCreated time.Time  `db:"time_created" json:"time_created"`
 }
 
 type Participant struct {
@@ -92,4 +93,29 @@ type Message struct {
 	Type            string     `db:"type" json:"type"`
 	AccountinfoName string     `db:"accountinfo_name" json:"accountinfo_name"`
 	GroupName       string     `db:"group_name" json:"group_name"`
+}
+
+type MessagePOST struct {
+	GroupID       gocql.UUID `json:"group_id"`
+	AccountinfoID int        `json:"accountinfo_id"`
+	Content       string     `json:"content"`
+	Type          string     `json:"type"`
+}
+
+type Notification struct {
+	AccountinfoID       int        `db:"accountinfo_id" json:"-"`
+	Type                string     `db:"type" json:"type"`
+	TimeCreated         time.Time  `db:"time_created" json:"time_created"`
+	GroupID             gocql.UUID `db:"group_id" json:"group_id"`
+	AccountinfoIDSender int        `db:"accountinfo_id_sender" json:"accountinfo_id_sender"`
+	Content             string     `db:"content" json:"content"`
+}
+
+type NotificationSeen struct {
+	AccountinfoID int        `db:"accountinfo_id" json:"accountinfo_id"`
+	Type          string     `db:"type" json:"type"`
+	GroupID       gocql.UUID `db:"group_id" json:"group_id"`
+	TimeCreated   time.Time  `db:"time_created" json:"time_created"`
+	TimeSeen      time.Time  `db:"time_seen" json:"time_seen"`
+	Content       string     `db:"content" json:"content"`
 }
