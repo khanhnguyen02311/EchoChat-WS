@@ -19,10 +19,9 @@ message AccountinfoValue {
 
 message NewMessageValue {
   int32 accountinfo_id = 1;
-  string accountinfo_name = 2;
-  string group_id = 3;
-  string content = 4;
-  string type = 5;
+  string group_id = 2;
+  string content = 3;
+  string type = 4;
 }
 
 message NewMessageResult {

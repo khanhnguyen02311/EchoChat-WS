@@ -7,6 +7,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/khanhnguyen02311/EchoChat-WS/components/db"
 	"github.com/khanhnguyen02311/EchoChat-WS/components/manager"
+	"github.com/khanhnguyen02311/EchoChat-WS/components/manager/connection"
 	"github.com/khanhnguyen02311/EchoChat-WS/components/manager/message"
 	"github.com/khanhnguyen02311/EchoChat-WS/components/services/rabbitmq"
 	"github.com/khanhnguyen02311/EchoChat-WS/configurations"
@@ -25,13 +26,20 @@ var (
 	m *manager.ConnectionManager
 )
 
-func handleMessage(c echo.Context, msg *message.InputMessage) {
-	outputMsg := message.NewOutputMessage(msg.Type, message.MsgStatusSuccess, msg.Content)
-	m.SendToClient(msg.Recipient, outputMsg)
-	//err := m.SendToClient(msg.Recipient, outputMsg)
-	//if err != nil {
-	//	c.Logger().Error(err)
-	//}
+func handleMessage(c echo.Context, conn *connection.WSConnection, msg *message.InputMessage) {
+	err := m.ProcessInputMessage(conn, msg)
+	if err != nil {
+		c.Logger().Error(err)
+		_ = conn.WriteJSONMessage(message.NewOutputMessage(
+			message.MsgTypeResponse,
+			message.MsgStatusError,
+			err.Error()))
+		return
+	}
+	_ = conn.WriteJSONMessage(message.NewOutputMessage(
+		message.MsgTypeResponse,
+		message.MsgStatusSuccess,
+		"Message sent"))
 }
 
 func initWS(c echo.Context) error {
@@ -48,10 +56,16 @@ func initWS(c echo.Context) error {
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNoStatusReceived, websocket.CloseNormalClosure) {
 				c.Logger().Error(err)
+				break
+			} else {
+				_ = conn.WriteJSONMessage(message.NewOutputMessage(
+					message.MsgTypeResponse,
+					message.MsgStatusError,
+					err.Error()))
 			}
-			break
+		} else {
+			go handleMessage(c, conn, msg)
 		}
-		go handleMessage(c, msg)
 	}
 	return nil
 }
