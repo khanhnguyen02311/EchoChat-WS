@@ -9,7 +9,7 @@ The input message format is as follows:
   "data": {
     "group_id": "be59abbe-9976-11ee-b70d-a4423bfe9228",
     "type": "Message", // type must be one of ["Message", "File"]
-    "content": "Message content goes here"
+    "content": "Message content or filename goes here"
   }
 }
 ```
@@ -32,7 +32,7 @@ The new notification message format is as follows:
   "status": "new",
   "message": null,
   "notification": {
-    type": "GroupEvent",
+    "type": "GroupEvent",
     "time_created": "2023-12-13T05:45:33.894150312Z",
     "group_id": "be59abbe-9976-11ee-b70d-a4423bfe9228",
     "accountinfo_id_sender": 3,
