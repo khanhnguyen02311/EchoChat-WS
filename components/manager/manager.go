@@ -66,7 +66,7 @@ func (manager *ConnectionManager) _validateClient(token string) (int, string) {
 
 func (manager *ConnectionManager) _sendNotificationsForNewMessage(messageDB *dbmodels.Message, messageRMQ *servicemodels.RMQMessage) {
 	notification := dbmodels.Notification{
-		AccountinfoID: 0,
+		AccountinfoID: 0, // iterated later
 		Type:          dbmodels.DBNotificationType[0],
 	}
 	// bind data to notification
