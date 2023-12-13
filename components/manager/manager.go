@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"net/http"
+	"time"
 )
 
 var upgrader = websocket.Upgrader{
@@ -44,27 +45,86 @@ func NewConnectionManager(e *echo.Echo, db *db.ScyllaDB) *ConnectionManager {
 	}
 }
 
-func (manager *ConnectionManager) _validateClient(token string) int {
+func (manager *ConnectionManager) _validateClient(token string) (int, string) {
 	//fmt.Println("Validating token: " + token)
 	conn, err := grpc.Dial("localhost:"+conf.PROTO_GRPC_PORT, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return 0
+		return 0, ""
 	}
 	defer conn.Close()
 	client := proto.NewEchoChatBEClient(conn)
 	resp, err := client.ValidateToken(context.Background(), &proto.TokenValue{Token: token})
 	if err != nil {
-		return 0
+		return 0, ""
 	}
 	if resp.GetId() == -1 {
 		fmt.Println("Invalid token: " + resp.GetName())
-		return 0
+		return 0, ""
 	}
-	return int(resp.GetId())
+	return int(resp.GetId()), resp.GetName()
+}
+
+func (manager *ConnectionManager) _sendNotificationsForNewMessage(messageDB *dbmodels.Message, messageRMQ *servicemodels.RMQMessage) {
+	notification := dbmodels.Notification{
+		AccountinfoID: 0,
+		Type:          dbmodels.DBNotificationType[0],
+	}
+	// bind data to notification
+	if messageDB != nil {
+		notification.GroupID = messageDB.GroupID
+		notification.AccountinfoIDSender = messageDB.AccountinfoID
+		notification.Content = messageDB.AccountinfoName + ": " + messageDB.Content
+		notification.TimeCreated = messageDB.TimeCreated.UTC()
+	} else {
+		notification.GroupID = messageRMQ.GroupID
+		notification.AccountinfoIDSender = messageRMQ.AccountinfoID
+		notification.Content = messageRMQ.AccountinfoName + ": " + messageRMQ.Content
+		notification.TimeCreated = messageRMQ.TimeCreated.UTC()
+	}
+	// query all participants of that group
+	listID, err := handler.NewParticipantHandler(manager.db).GetAllParticipantsFromGroup(notification.GroupID)
+	if err != nil {
+		fmt.Println("Error getting all participants:", err.Error())
+		return
+	}
+	if len(listID) == 0 {
+		fmt.Println("No participants found")
+		return
+	}
+	// add notification to database
+	notificationHandler := handler.NewNotificationHandler(manager.db)
+	notificationHandler.AddNotifications(listID, &notification)
+	// send notification to clients
+	notificationMsg := message.NewOutputMessage(message.MsgTypeNotification, message.MsgStatusNew, "")
+	notificationMsg.Notification = &notification
+	manager.SendToClients(listID, notificationMsg)
 }
 
 func (manager *ConnectionManager) GetAllConnections() {
 	fmt.Println("All connections:", manager.connectionsByID)
+}
+
+func (manager *ConnectionManager) ProcessInputMessage(conn *connection.WSConnection, msg *message.InputMessage) error {
+	groupHandler := handler.NewGroupHandler(manager.db)
+	group, err := groupHandler.GetGroupByID(msg.Data.GroupID)
+	if err != nil || group == nil {
+		return errors.New("group not found")
+	}
+	newMessage := dbmodels.Message{
+		AccountinfoID:   conn.ClientID,
+		GroupID:         msg.Data.GroupID,
+		Content:         msg.Data.Content,
+		TimeCreated:     time.Now().UTC(),
+		Type:            msg.Data.Type,
+		AccountinfoName: conn.ClientName,
+		GroupName:       group.Name,
+	}
+	err = handler.NewMessageHandler(manager.db).AddNewMessage(&newMessage)
+	if err != nil {
+		return err
+	}
+	manager._sendNotificationsForNewMessage(&newMessage, nil)
+	return nil
 }
 
 func (manager *ConnectionManager) ProcessRMQMessage(msg []byte) {
@@ -73,36 +133,7 @@ func (manager *ConnectionManager) ProcessRMQMessage(msg []byte) {
 	if err := json.Unmarshal(msg, &parsedMsg); err != nil {
 		fmt.Println("Error unmarshalling message:", err.Error())
 	}
-	// query all participants of that group
-	listID, err := handler.NewParticipantHandler(manager.db).GetAllParticipantsFromGroup(parsedMsg.GroupID)
-	if err != nil {
-		fmt.Println("Error getting all participants:", err.Error())
-	}
-	if len(listID) == 0 {
-		fmt.Println("No participants found")
-		return
-	}
-	fmt.Println("List of participants:", listID)
-	var notification = dbmodels.Notification{
-		AccountinfoID:       0,
-		Type:                "GroupEvent",
-		TimeCreated:         parsedMsg.TimeCreated.UTC(),
-		GroupID:             parsedMsg.GroupID,
-		AccountinfoIDSender: parsedMsg.AccountinfoID,
-		Content:             parsedMsg.Content,
-	}
-	notificationHandler := handler.NewNotificationHandler(manager.db)
-	for i := range listID {
-		// add notifications to database
-		notification.AccountinfoID = listID[i]
-		err := notificationHandler.AddNotification(&notification)
-		if err != nil {
-			fmt.Println("Error adding notification:", err.Error())
-		}
-	}
-	// send message to all participants
-	newMessage := message.NewOutputMessage(message.MsgTypeNotification, message.MsgStatusNew, msg)
-	manager.SendToClients(listID, newMessage)
+	manager._sendNotificationsForNewMessage(nil, &parsedMsg)
 }
 
 func (manager *ConnectionManager) ProcessRMQNoti(msg []byte) {
@@ -110,10 +141,11 @@ func (manager *ConnectionManager) ProcessRMQNoti(msg []byte) {
 	// TODO: send noti to client
 }
 
-func (manager *ConnectionManager) AddConnection(conn *websocket.Conn, clientID int) *connection.WSConnection {
+func (manager *ConnectionManager) AddConnection(conn *websocket.Conn, clientID int, clientName string) *connection.WSConnection {
 	c := &connection.WSConnection{
-		Conn:     conn,
-		ClientID: clientID,
+		Conn:       conn,
+		ClientID:   clientID,
+		ClientName: clientName,
 	}
 	manager.connectionsByID[c.ClientID] = append(manager.connectionsByID[c.ClientID], c)
 	return c
@@ -140,7 +172,7 @@ func (manager *ConnectionManager) ValidateAndAddConnection(w http.ResponseWriter
 	if token == "" {
 		return nil, errors.New("missing token")
 	}
-	clientID := manager._validateClient(token)
+	clientID, clientName := manager._validateClient(token)
 	if clientID == 0 {
 		return nil, errors.New("client not found")
 	}
@@ -148,7 +180,7 @@ func (manager *ConnectionManager) ValidateAndAddConnection(w http.ResponseWriter
 	if err != nil {
 		return nil, err
 	}
-	return manager.AddConnection(ws, clientID), nil
+	return manager.AddConnection(ws, clientID, clientName), nil
 }
 
 func (manager *ConnectionManager) SendToClient(clientID int, outputMessage *message.OutputMessage) {
