@@ -18,9 +18,8 @@ const (
 )
 
 type InputMessage struct {
-	Type      string `json:"type"`
-	Recipient int    `json:"recipient"`
-	Content   []byte `json:"content"`
+	Type string                `json:"type"`
+	Data *dbmodels.MessagePOST `json:"data"`
 }
 
 type OutputMessage struct {
@@ -28,20 +27,19 @@ type OutputMessage struct {
 	Status       string                    `json:"status"`
 	Message      *servicemodels.RMQMessage `json:"message"`
 	Notification *dbmodels.Notification    `json:"notification"`
-	Content      []byte                    `json:"content"`
+	Content      string                    `json:"content"`
 }
 
 // TODO: Find a way to bind item inside output message
 
-func NewInputMessage(msgType string, msgRecipient int, msgContent []byte) *InputMessage {
+func NewInputMessage(msgType string, data *dbmodels.MessagePOST) *InputMessage {
 	return &InputMessage{
-		Type:      msgType,
-		Recipient: msgRecipient,
-		Content:   msgContent,
+		Type: msgType,
+		Data: data,
 	}
 }
 
-func NewOutputMessage(msgType string, msgStatus string, msgContent []byte) *OutputMessage {
+func NewOutputMessage(msgType string, msgStatus string, msgContent string) *OutputMessage {
 	return &OutputMessage{
 		Type:    msgType,
 		Status:  msgStatus,
