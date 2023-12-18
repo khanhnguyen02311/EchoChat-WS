@@ -46,8 +46,7 @@ func NewConnectionManager(e *echo.Echo, db *db.ScyllaDB) *ConnectionManager {
 }
 
 func (manager *ConnectionManager) _validateClient(token string) (int, string) {
-	//fmt.Println("Validating token: " + token)
-	conn, err := grpc.Dial("localhost:"+conf.PROTO_GRPC_PORT, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.Dial(conf.PROTO_GRPC_HOST+":"+conf.PROTO_GRPC_PORT, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return 0, ""
 	}
