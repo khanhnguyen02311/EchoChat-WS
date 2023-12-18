@@ -29,6 +29,8 @@ FROM golang:1.21 as runner
 WORKDIR /app
 
 COPY --from=builder /app/bin/echochatws ./bin/echochatws
+COPY --from=builder /app/.env.dev ./.env.dev
+COPY --from=builder /app/.env.staging ./.env.staging
 
 STOPSIGNAL SIGQUIT
 
