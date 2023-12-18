@@ -1,0 +1,13 @@
+# "docker compose -p echochatws-staging -f docker-compose-staging.yml --env-file .env.staging up --build"
+version: "4"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env.dev
+    restart: no
+    ports:
+      - "${APP_PORT}:${APP_PORT}"

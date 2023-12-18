@@ -15,7 +15,7 @@ type RMQService struct {
 }
 
 func NewRMQService() (*RMQService, error) {
-	conn, err := amqp.Dial("amqp://" + conf.PROTO_RMQ_USR + ":" + conf.PROTO_RMQ_PWD + "@:" + conf.PROTO_RMQ_PORT)
+	conn, err := amqp.Dial("amqp://" + conf.PROTO_RMQ_USR + ":" + conf.PROTO_RMQ_PWD + "@" + conf.PROTO_RMQ_HOST + ":" + conf.PROTO_RMQ_PORT)
 	if err != nil {
 		fmt.Println("Error connecting to RabbitMQ: ", err.Error())
 		return nil, err

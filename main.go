@@ -71,10 +71,21 @@ func initWS(c echo.Context) error {
 }
 
 func main() {
+	envFile := ""
+	switch os.Getenv("APP_STAGE") {
+	case "staging":
+		fmt.Println("Running in staging mode")
+		envFile = ".env.staging"
+	case "prod":
+		fmt.Println("Running in production mode")
+		envFile = ".env.prod"
+	default:
+		fmt.Println("Running in development mode")
+	}
 	// Init context and environment variables
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if err := configurations.InitEnv(".env.dev"); err != nil {
+	if err := configurations.InitEnv(envFile); err != nil {
 		fmt.Printf("Error loading environment variables: %s\n", err.Error())
 		return
 	}
@@ -105,7 +116,7 @@ func main() {
 	wg.Add(1)
 	go rmq.StartConsuming(ctx, m, &wg)
 	go func() {
-		if err := e.Start(":1323"); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := e.Start("0.0.0.0:" + configurations.APP_PORT); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal(err)
 		}
 	}()
