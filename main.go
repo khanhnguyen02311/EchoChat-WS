@@ -71,7 +71,7 @@ func initWS(c echo.Context) error {
 }
 
 func main() {
-	envFile := ""
+	envFile := ".env.dev"
 	switch os.Getenv("APP_STAGE") {
 	case "staging":
 		fmt.Println("Running in staging mode")
