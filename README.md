@@ -7,8 +7,6 @@ The WebSocket connection have this format: `wss://application-url.com:port/ws?to
 The connection requires a token to be sent in the query string.
 - `token`: The EchoChat user's access token
 
-```
-
 ## Input message format
 The new message format is as follows:
 ```json
