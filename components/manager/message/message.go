@@ -6,10 +6,11 @@ import (
 )
 
 const (
-	MsgTypeMessage      = "message"
-	MsgTypeNotification = "notification"
-	MsgTypeResponse     = "response"
-	MsgTypeHelp         = "help"
+	MsgTypeMessageNew       = "message-new"
+	MsgTypeNotification     = "notification"
+	MsgTypeNotificationRead = "notification-read"
+	MsgTypeResponse         = "response"
+	MsgTypeHelp             = "help"
 
 	MsgStatusNew     = "new"
 	MsgStatusSuccess = "success"
@@ -29,8 +30,6 @@ type OutputMessage struct {
 	Notification *dbmodels.Notification    `json:"notification"`
 	Content      string                    `json:"content"`
 }
-
-// TODO: Find a way to bind item inside output message
 
 func NewInputMessage(msgType string, data *dbmodels.MessagePOST) *InputMessage {
 	return &InputMessage{

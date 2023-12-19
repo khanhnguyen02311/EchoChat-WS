@@ -81,7 +81,7 @@ func (manager *ConnectionManager) _sendNotificationsForNewMessage(messageDB *dbm
 		notification.TimeCreated = messageRMQ.TimeCreated.UTC()
 	}
 	// query all participants of that group
-	listID, err := handler.NewParticipantHandler(manager.db).GetAllParticipantsFromGroup(notification.GroupID)
+	listID, err := handler.NewParticipantHandler(manager.db).GetAllParticipantIDsFromGroup(notification.GroupID)
 	if err != nil {
 		fmt.Println("Error getting all participants:", err.Error())
 		return
@@ -92,7 +92,7 @@ func (manager *ConnectionManager) _sendNotificationsForNewMessage(messageDB *dbm
 	}
 	// add notification to database
 	notificationHandler := handler.NewNotificationHandler(manager.db)
-	notificationHandler.AddNotifications(listID, &notification)
+	notificationHandler.AddMultipleNotifications(listID, &notification)
 	// send notification to clients
 	notificationMsg := message.NewOutputMessage(message.MsgTypeNotification, message.MsgStatusNew, "")
 	notificationMsg.Notification = &notification
@@ -104,26 +104,48 @@ func (manager *ConnectionManager) GetAllConnections() {
 }
 
 func (manager *ConnectionManager) ProcessInputMessage(conn *connection.WSConnection, msg *message.InputMessage) error {
-	groupHandler := handler.NewGroupHandler(manager.db)
-	group, err := groupHandler.GetGroupByID(msg.Data.GroupID)
-	if err != nil || group == nil {
-		return errors.New("group not found")
+	switch msg.Type {
+	case message.MsgTypeMessageNew:
+		groupHandler := handler.NewGroupHandler(manager.db)
+		participantHandler := handler.NewParticipantHandler(manager.db)
+		group, err := groupHandler.GetGroupByID(msg.Data.GroupID)
+		if err != nil || group == nil {
+			return errors.New("group not found")
+		}
+		participant, err := participantHandler.CheckJoinedParticipant(conn.ClientID, group.ID)
+		if err != nil || participant == nil {
+			return errors.New("not a participant of this group")
+		}
+		newMessage := dbmodels.Message{
+			AccountinfoID:   conn.ClientID,
+			GroupID:         msg.Data.GroupID,
+			Content:         msg.Data.Content,
+			TimeCreated:     time.Now().UTC(),
+			Type:            msg.Data.Type,
+			AccountinfoName: conn.ClientName,
+			GroupName:       group.Name,
+		}
+		err = handler.NewMessageHandler(manager.db).AddNewMessage(&newMessage)
+		if err != nil {
+			return err
+		}
+		manager._sendNotificationsForNewMessage(&newMessage, nil)
+		return nil
+
+	case message.MsgTypeNotificationRead:
+		notificationSeen := dbmodels.NotificationSeen{
+			AccountinfoID: conn.ClientID,
+			Type:          msg.Data.Type,
+			GroupID:       msg.Data.GroupID,
+			TimeCreated:   time.Now().UTC(),
+		}
+		err := handler.NewNotificationHandler(manager.db).AddNotificationSeen(&notificationSeen)
+		if err != nil {
+			return err
+		}
+		return nil
 	}
-	newMessage := dbmodels.Message{
-		AccountinfoID:   conn.ClientID,
-		GroupID:         msg.Data.GroupID,
-		Content:         msg.Data.Content,
-		TimeCreated:     time.Now().UTC(),
-		Type:            msg.Data.Type,
-		AccountinfoName: conn.ClientName,
-		GroupName:       group.Name,
-	}
-	err = handler.NewMessageHandler(manager.db).AddNewMessage(&newMessage)
-	if err != nil {
-		return err
-	}
-	manager._sendNotificationsForNewMessage(&newMessage, nil)
-	return nil
+	return errors.New("invalid message type")
 }
 
 func (manager *ConnectionManager) ProcessRMQMessage(msg []byte) {
