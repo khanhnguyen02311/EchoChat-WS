@@ -3,16 +3,15 @@ A module for EchoChat that allows for WebSocket connections.
 
 ## Connection:
 The WebSocket connection have this format: `wss://application-url.com:port/ws?token=abcxyz`
-The connection requires a token to be sent in the query string.
-- `token`: The user's token
 
-Example:
+The connection requires a token to be sent in the query string.
+- `token`: The EchoChat user's access token
+
 ```
 
-## Message format
-The input message format is as follows:
+## Input message format
+The new message format is as follows:
 ```json
-// For sending new messages
 {
   "type": "message-new",
   "data": {
@@ -21,8 +20,10 @@ The input message format is as follows:
     "content": "Message content or filename goes here"
   }
 }
+```
 
-// For marking notifications as read
+The notification mark as read message format is as follows:
+```json
 {
   "type": "notification-read",
   "data": {
@@ -32,6 +33,7 @@ The input message format is as follows:
 }
 ```
 
+## Output message format
 The response message format is as follows:
 ```json
 {
