@@ -4,11 +4,11 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
-  - job_name: prometheus
+  - job_name: prometheus_ws
     static_configs:
       - targets:
           - localhost:9090
-  - job_name: 'websocket'
+  - job_name: 'echo_ws'
     scrape_interval: 10s
     metrics_path: /metrics
     static_configs:

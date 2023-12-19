@@ -30,7 +30,7 @@ func (h NotificationHandler) AddNotification(notification *dbmodels.Notification
 	return nil
 }
 
-func (h NotificationHandler) AddNotifications(accountinfoIDs []int, notification *dbmodels.Notification) {
+func (h NotificationHandler) AddMultipleNotifications(accountinfoIDs []int, notification *dbmodels.Notification) {
 	for _, id := range accountinfoIDs {
 		notification.AccountinfoID = id
 		err := h.db.Session.Query(h.db.Tables.NotificationTable.Insert()).BindStruct(notification).ExecRelease()

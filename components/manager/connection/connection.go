@@ -28,13 +28,18 @@ func (c *WSConnection) ReadJSONMessage() (*message.InputMessage, error) {
 		return nil, err
 	}
 	// validate message contents
-	if msg.Type != message.MsgTypeMessage {
-		return nil, fmt.Errorf("message type invalid (only supported 'message' for now)")
+	switch msg.Type {
+	case message.MsgTypeMessageNew:
+		if msg.Data == nil || !slices.Contains(dbmodels.DBMessageType[:2], msg.Data.Type) || msg.Data.Content == "" {
+			return nil, fmt.Errorf("invalid required fields for new message (group_id, content, type)")
+		}
+	case message.MsgTypeNotificationRead:
+		if msg.Data == nil || !slices.Contains(dbmodels.DBNotificationType, msg.Data.Type) {
+			return nil, fmt.Errorf("invalid required fields for marking read notification (group_id, type)")
+		}
+	default:
+		return nil, fmt.Errorf("invalid message type (%q for sending new messages or %q for marking messages as seen)", message.MsgTypeMessageNew, message.MsgTypeNotificationRead)
 	}
-	if msg.Data == nil || !slices.Contains(dbmodels.DBMessageType, msg.Data.Type) || msg.Data.Content == "" {
-		return nil, fmt.Errorf("invalid required fields for message data (group_id, content, type)")
-	}
-
 	fmt.Printf("Received message from client %d\n", c.ClientID)
 	return msg, nil
 }

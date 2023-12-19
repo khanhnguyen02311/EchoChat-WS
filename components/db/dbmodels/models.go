@@ -16,12 +16,18 @@ var (
 		PartKey: []string{"id"},
 		SortKey: []string{},
 	}
-	participantByGroupMetadata = table.Metadata{
-		Name:    "participant_by_group",
-		Columns: []string{"group_id", "time_created", "accountinfo_id", "notify", "role"},
-		PartKey: []string{"group_id"},
-		SortKey: []string{"time_created", "accountinfo_id"},
-	}
+	//participantByGroupMetadata = table.Metadata{
+	//	Name:    "participant_by_account",
+	//	Columns: []string{"group_id", "time_created", "accountinfo_id", "notify", "role"},
+	//	PartKey: []string{"group_id"},
+	//	SortKey: []string{"time_created", "accountinfo_id"},
+	//}
+	//participantByAccountMetadata = table.Metadata{
+	//	Name:    "participant_by_account",
+	//	Columns: []string{"accountinfo_id", "group_id", "time_created", "notify", "role"},
+	//	PartKey: []string{"accountinfo_id"},
+	//	SortKey: []string{"group_id", "time_created"},
+	//}
 	messageByGroupMetadata = table.Metadata{
 		Name:    "message_by_group",
 		Columns: []string{"accountinfo_id", "time_created", "group_id", "content", "type", "accountinfo_name", "group_name"},
@@ -29,7 +35,7 @@ var (
 		SortKey: []string{"time_created", "group_id"},
 	}
 	messageByAccountMetadata = table.Metadata{
-		Name:    "message_by_group",
+		Name:    "message_by_account",
 		Columns: []string{"group_id", "time_created", "accountinfo_id", "content", "type", "accountinfo_name", "group_name"},
 		PartKey: []string{"group_id"},
 		SortKey: []string{"time_created", "accountinfo_id"},
@@ -41,8 +47,8 @@ var (
 		SortKey: []string{"type", "time_created", "group_id"},
 	}
 	notificationSeenMetadata = table.Metadata{
-		Name:    "notification",
-		Columns: []string{"accountinfo_id", "type", "group_id", "time_created", "content", "time_seen"},
+		Name:    "notification_seen",
+		Columns: []string{"accountinfo_id", "type", "group_id", "time_created"},
 		PartKey: []string{"accountinfo_id"},
 		SortKey: []string{"type", "group_id", "time_created"},
 	}
@@ -50,22 +56,24 @@ var (
 
 // ScyllaDBTables provides metadata for query builder only, not used for creating tables
 type ScyllaDBTables struct {
-	NotificationTable       *table.Table
-	NotificationSeenTable   *table.Table
-	MessageByGroupTable     *table.Table
-	MessageByAccountTable   *table.Table
-	ParticipantByGroupTable *table.Table
-	GroupTable              *table.Table
+	NotificationTable     *table.Table
+	NotificationSeenTable *table.Table
+	MessageByGroupTable   *table.Table
+	MessageByAccountTable *table.Table
+	//ParticipantByAccountTable *table.Table
+	//ParticipantByGroupTable   *table.Table
+	GroupTable *table.Table
 }
 
 func InitScyllaDBTables() *ScyllaDBTables {
 	return &ScyllaDBTables{
-		NotificationTable:       table.New(notificationMetadata),
-		NotificationSeenTable:   table.New(notificationSeenMetadata),
-		MessageByGroupTable:     table.New(messageByGroupMetadata),
-		MessageByAccountTable:   table.New(messageByAccountMetadata),
-		ParticipantByGroupTable: table.New(participantByGroupMetadata),
-		GroupTable:              table.New(groupMetadata),
+		NotificationTable:     table.New(notificationMetadata),
+		NotificationSeenTable: table.New(notificationSeenMetadata),
+		MessageByGroupTable:   table.New(messageByGroupMetadata),
+		MessageByAccountTable: table.New(messageByAccountMetadata),
+		//ParticipantByAccountTable: table.New(participantByAccountMetadata),
+		//ParticipantByGroupTable:   table.New(participantByGroupMetadata),
+		GroupTable: table.New(groupMetadata),
 	}
 }
 
@@ -73,14 +81,14 @@ type Group struct {
 	ID          gocql.UUID `db:"id" json:"id"`
 	Name        string     `db:"name" json:"name"`
 	Description string     `db:"description" json:"description"`
-	Visibility  string     `db:"visibility" json:"visibility"`
+	Visibility  bool       `db:"visibility" json:"visibility"`
 	TimeCreated time.Time  `db:"time_created" json:"time_created"`
 }
 
 type Participant struct {
+	AccountinfoID int        `db:"accountinfo_id"`
 	GroupID       gocql.UUID `db:"group_id"`
 	TimeCreated   time.Time  `db:"time_created"`
-	AccountinfoID int        `db:"accountinfo_id"`
 	Notify        bool       `db:"notify"`
 	Role          string     `db:"role"`
 }
@@ -116,6 +124,4 @@ type NotificationSeen struct {
 	Type          string     `db:"type" json:"type"`
 	GroupID       gocql.UUID `db:"group_id" json:"group_id"`
 	TimeCreated   time.Time  `db:"time_created" json:"time_created"`
-	TimeSeen      time.Time  `db:"time_seen" json:"time_seen"`
-	Content       string     `db:"content" json:"content"`
 }

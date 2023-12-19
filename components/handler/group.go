@@ -23,7 +23,7 @@ func NewGroupHandler(db *db.ScyllaDB) *GroupHandler {
 
 func (h GroupHandler) GetGroupByID(groupID gocql.UUID) (*dbmodels.Group, error) {
 	group := dbmodels.Group{ID: groupID}
-	err := h.db.Session.Query(h.db.Tables.GroupTable.Select()).BindStruct(group).ExecRelease()
+	err := h.db.Session.Query(h.db.Tables.GroupTable.Get()).BindStruct(group).GetRelease(&group)
 	if err != nil {
 		fmt.Println("An error occurred while getting group", err.Error())
 		return nil, err
