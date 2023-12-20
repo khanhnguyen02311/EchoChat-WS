@@ -12,7 +12,7 @@ services:
       - APP_STAGE=staging
     restart: unless-stopped
     ports:
-      - "20014:${APP_PORT}"
+      - "127.0.0.1:20013:${APP_PORT}"
     networks:
       - echochat-staging_network-1
 
