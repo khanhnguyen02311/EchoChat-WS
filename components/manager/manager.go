@@ -150,11 +150,14 @@ func (manager *ConnectionManager) ProcessInputMessage(conn *connection.WSConnect
 
 func (manager *ConnectionManager) ProcessRMQMessage(msg []byte) {
 	fmt.Println("Received message from message queue:", string(msg))
-	parsedMsg := servicemodels.RMQMessage{}
-	if err := json.Unmarshal(msg, &parsedMsg); err != nil {
-		fmt.Println("Error unmarshalling message:", err.Error())
-	}
-	manager._sendNotificationsForNewMessage(nil, &parsedMsg)
+	// run each process in a new coroutine
+	go func() {
+		parsedMsg := servicemodels.RMQMessage{}
+		if err := json.Unmarshal(msg, &parsedMsg); err != nil {
+			fmt.Println("Error unmarshalling message:", err.Error())
+		}
+		manager._sendNotificationsForNewMessage(nil, &parsedMsg)
+	}()
 }
 
 func (manager *ConnectionManager) ProcessRMQNoti(msg []byte) {
