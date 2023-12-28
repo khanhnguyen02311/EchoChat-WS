@@ -6,6 +6,7 @@ import (
 	"github.com/khanhnguyen02311/EchoChat-WS/components/db/dbmodels"
 	"github.com/khanhnguyen02311/EchoChat-WS/components/manager/message"
 	"golang.org/x/exp/slices"
+	"sync"
 )
 
 // WSConnection wraps a websocket connection.
@@ -15,6 +16,7 @@ type WSConnection struct {
 	Conn       *websocket.Conn
 	ClientID   int
 	ClientName string
+	mutex      sync.Mutex
 	//ActiveGroup *uuid.UUID
 }
 
@@ -45,5 +47,7 @@ func (c *WSConnection) ReadJSONMessage() (*message.InputMessage, error) {
 }
 
 func (c *WSConnection) WriteJSONMessage(msg *message.OutputMessage) error {
+	c.mutex.Lock() // lock & unlock mutex to prevent concurrent writes
+	defer c.mutex.Unlock()
 	return c.Conn.WriteJSON(msg)
 }

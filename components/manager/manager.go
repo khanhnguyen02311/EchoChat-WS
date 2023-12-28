@@ -15,33 +15,40 @@ import (
 	"github.com/khanhnguyen02311/EchoChat-WS/components/services/servicemodels"
 	conf "github.com/khanhnguyen02311/EchoChat-WS/configurations"
 	"github.com/labstack/echo/v4"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"net/http"
 	"time"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true // Accepting all requests
-	},
-}
+var (
+	upgrader = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			return true // Accepting all requests
+		},
+	}
+)
 
 // A ConnectionManager handles all connections to the EchoChat server and their respective clients.
 //
 // It uses Echo to handle the HTTP requests/metrics/logging and custom Gorilla Websockets to handle the WebSocket connections.
 // Each client ID can have multiple connections stored in a slice.
 type ConnectionManager struct {
-	connectionsByID map[int][]*connection.WSConnection
-	server          *echo.Echo
-	db              *db.ScyllaDB
+	MessageReceivedCounter *prometheus.CounterVec
+	MessageSentCounter     *prometheus.CounterVec
+	connectionsByID        map[int][]*connection.WSConnection
+	server                 *echo.Echo
+	db                     *db.ScyllaDB
 }
 
-func NewConnectionManager(e *echo.Echo, db *db.ScyllaDB) *ConnectionManager {
+func NewConnectionManager(e *echo.Echo, db *db.ScyllaDB, msgSentCounter *prometheus.CounterVec, msgReceivedCounter *prometheus.CounterVec) *ConnectionManager {
 	return &ConnectionManager{
-		connectionsByID: make(map[int][]*connection.WSConnection),
-		server:          e,
-		db:              db,
+		MessageSentCounter:     msgSentCounter,
+		MessageReceivedCounter: msgReceivedCounter,
+		connectionsByID:        make(map[int][]*connection.WSConnection),
+		server:                 e,
+		db:                     db,
 	}
 }
 
@@ -106,6 +113,7 @@ func (manager *ConnectionManager) GetAllConnections() {
 func (manager *ConnectionManager) ProcessInputMessage(conn *connection.WSConnection, msg *message.InputMessage) error {
 	switch msg.Type {
 	case message.MsgTypeMessageNew:
+		manager.MessageReceivedCounter.WithLabelValues(message.MsgTypeMessageNew).Inc()
 		groupHandler := handler.NewGroupHandler(manager.db)
 		participantHandler := handler.NewParticipantHandler(manager.db)
 		group, err := groupHandler.GetGroupByID(msg.Data.GroupID)
@@ -133,6 +141,7 @@ func (manager *ConnectionManager) ProcessInputMessage(conn *connection.WSConnect
 		return nil
 
 	case message.MsgTypeNotificationRead:
+		manager.MessageReceivedCounter.WithLabelValues(message.MsgTypeNotificationRead).Inc()
 		notificationSeen := dbmodels.NotificationSeen{
 			AccountinfoID: conn.ClientID,
 			Type:          msg.Data.Type,
@@ -150,11 +159,14 @@ func (manager *ConnectionManager) ProcessInputMessage(conn *connection.WSConnect
 
 func (manager *ConnectionManager) ProcessRMQMessage(msg []byte) {
 	fmt.Println("Received message from message queue:", string(msg))
-	parsedMsg := servicemodels.RMQMessage{}
-	if err := json.Unmarshal(msg, &parsedMsg); err != nil {
-		fmt.Println("Error unmarshalling message:", err.Error())
-	}
-	manager._sendNotificationsForNewMessage(nil, &parsedMsg)
+	// run each process in a new coroutine
+	go func() {
+		parsedMsg := servicemodels.RMQMessage{}
+		if err := json.Unmarshal(msg, &parsedMsg); err != nil {
+			fmt.Println("Error unmarshalling message:", err.Error())
+		}
+		manager._sendNotificationsForNewMessage(nil, &parsedMsg)
+	}()
 }
 
 func (manager *ConnectionManager) ProcessRMQNoti(msg []byte) {
@@ -206,6 +218,7 @@ func (manager *ConnectionManager) ValidateAndAddConnection(w http.ResponseWriter
 
 func (manager *ConnectionManager) SendToClient(clientID int, outputMessage *message.OutputMessage) {
 	for _, conn := range manager.connectionsByID[clientID] {
+		manager.MessageSentCounter.WithLabelValues(message.MsgTypeNotification).Inc()
 		err := conn.WriteJSONMessage(outputMessage)
 		if err != nil {
 			fmt.Println("Error sending message to client:", err.Error())
