@@ -47,7 +47,7 @@ func (c *WSConnection) ReadJSONMessage() (*message.InputMessage, error) {
 }
 
 func (c *WSConnection) WriteJSONMessage(msg *message.OutputMessage) error {
-	c.mutex.Lock()
+	c.mutex.Lock() // lock & unlock mutex to prevent concurrent writes
 	defer c.mutex.Unlock()
 	return c.Conn.WriteJSON(msg)
 }

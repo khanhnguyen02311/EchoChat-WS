@@ -14,6 +14,7 @@ import (
 	"github.com/labstack/echo-contrib/echoprometheus"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/prometheus/client_golang/prometheus"
 	"log"
 	"net/http"
 	"os"
@@ -22,6 +23,23 @@ import (
 )
 
 var (
+	SuccessfulConnectionCounter = prometheus.NewCounter(prometheus.CounterOpts{
+		Subsystem: "echo_ws",
+		Name:      "successful_websocket_connections_total",
+		Help:      "Total number of successful WebSocket connections",
+	})
+	MessageReceivedCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Subsystem: "echo_ws",
+		Name:      "messages_received_total",
+		Help:      "Total number of messages received, separated by type",
+	}, []string{"type"})
+	MessageSentCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Subsystem: "echo_ws",
+		Name:      "messages_sent_total",
+		Help:      "Total number of messages sent, separated by type",
+	}, []string{"type"})
+	// Custom prometheus metrics
+
 	e *echo.Echo
 	m *manager.ConnectionManager
 )
@@ -34,12 +52,14 @@ func handleMessage(c echo.Context, conn *connection.WSConnection, msg *message.I
 			message.MsgTypeResponse,
 			message.MsgStatusError,
 			err.Error()))
+		MessageSentCounter.WithLabelValues(message.MsgTypeResponse + "-" + message.MsgStatusError).Inc()
 		return
 	}
 	_ = conn.WriteJSONMessage(message.NewOutputMessage(
 		message.MsgTypeResponse,
 		message.MsgStatusSuccess,
 		""))
+	MessageSentCounter.WithLabelValues(message.MsgTypeResponse + "-" + message.MsgStatusSuccess).Inc()
 }
 
 func initWS(c echo.Context) error {
@@ -49,19 +69,23 @@ func initWS(c echo.Context) error {
 		c.Logger().Error(err)
 		return c.String(404, err.Error())
 	}
-	m.GetAllConnections()
+	SuccessfulConnectionCounter.Inc()
 	defer m.RemoveConnection(conn)
 	for {
 		msg, err := conn.ReadJSONMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNoStatusReceived, websocket.CloseNormalClosure) {
-				c.Logger().Error(err)
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived) {
+				c.Logger().Info("Connection closed: ", err.Error())
+				break
+			} else if websocket.IsUnexpectedCloseError(err) {
+				c.Logger().Error("Unexpected close error: ", err.Error())
 				break
 			} else {
 				_ = conn.WriteJSONMessage(message.NewOutputMessage(
 					message.MsgTypeResponse,
 					message.MsgStatusError,
 					err.Error()))
+				MessageSentCounter.WithLabelValues(message.MsgTypeResponse + "-" + message.MsgStatusError).Inc()
 			}
 		} else {
 			go handleMessage(c, conn, msg)
@@ -98,17 +122,37 @@ func main() {
 	}
 	//dbSession.Test()
 	e = echo.New()
-	m = manager.NewConnectionManager(e, dbSession)
+	m = manager.NewConnectionManager(e, dbSession, MessageSentCounter, MessageReceivedCounter)
 	rmq, err := rabbitmq.NewRMQService()
 	if err != nil {
+		fmt.Println("Error connecting to RabbitMQ:", err.Error())
 		return
 	}
+
+	// register custom prometheus metrics
+	if err := prometheus.Register(SuccessfulConnectionCounter); err != nil {
+		log.Fatal(err)
+	}
+	if err := prometheus.Register(MessageSentCounter); err != nil {
+		log.Fatal(err)
+	}
+	if err := prometheus.Register(MessageReceivedCounter); err != nil {
+		log.Fatal(err)
+	}
+
+	// pre-load counter labels
+	SuccessfulConnectionCounter.Add(0)
+	MessageSentCounter.WithLabelValues(message.MsgTypeResponse + "-" + message.MsgStatusError).Add(0)
+	MessageSentCounter.WithLabelValues(message.MsgTypeResponse + "-" + message.MsgStatusSuccess).Add(0)
+	MessageSentCounter.WithLabelValues(message.MsgTypeNotification).Add(0)
+	MessageReceivedCounter.WithLabelValues(message.MsgTypeMessageNew).Add(0)
+	MessageReceivedCounter.WithLabelValues(message.MsgTypeNotificationRead).Add(0)
 
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 	e.Use(echoprometheus.NewMiddleware("echo_ws"))
 
-	e.GET("/metrics", echoprometheus.NewHandler())
+	e.GET("/metrics", echoprometheus.NewHandler()) // default handler
 	e.GET("/ws", initWS)
 
 	// Start the RabbitMQ consumer and the Echo server
