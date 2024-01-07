@@ -4,6 +4,7 @@
 # Auto-generated protobuf files
 *.pb.go
 
+bin/
 
 # Binaries for programs and plugins
 *.exe

@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -38,6 +39,7 @@ type ConnectionManager struct {
 	MessageReceivedCounter *prometheus.CounterVec
 	MessageSentCounter     *prometheus.CounterVec
 	connectionsByID        map[int][]*connection.WSConnection
+	connectionsByIDMutex   sync.RWMutex
 	server                 *echo.Echo
 	db                     *db.ScyllaDB
 }
@@ -47,6 +49,7 @@ func NewConnectionManager(e *echo.Echo, db *db.ScyllaDB, msgSentCounter *prometh
 		MessageSentCounter:     msgSentCounter,
 		MessageReceivedCounter: msgReceivedCounter,
 		connectionsByID:        make(map[int][]*connection.WSConnection),
+		connectionsByIDMutex:   sync.RWMutex{},
 		server:                 e,
 		db:                     db,
 	}
@@ -68,6 +71,36 @@ func (manager *ConnectionManager) _validateClient(token string) (int, string) {
 		return 0, ""
 	}
 	return int(resp.GetId()), resp.GetName()
+}
+
+func (manager *ConnectionManager) _getConnectionsMutex(clientID int) []*connection.WSConnection {
+	manager.connectionsByIDMutex.RLock()
+	defer manager.connectionsByIDMutex.RUnlock()
+	return manager.connectionsByID[clientID]
+}
+
+func (manager *ConnectionManager) _addConnectionsMutex(conn *connection.WSConnection) {
+	manager.connectionsByIDMutex.Lock()
+	defer manager.connectionsByIDMutex.Unlock()
+	manager.connectionsByID[conn.ClientID] = append(manager.connectionsByID[conn.ClientID], conn)
+}
+
+func (manager *ConnectionManager) _removeConnectionsMutex(conn *connection.WSConnection) {
+	manager.connectionsByIDMutex.Lock()
+	defer manager.connectionsByIDMutex.Unlock()
+	// 1 account should have just 1 to some connections, so we should be fine to block the whole map
+	for i, c := range manager.connectionsByID[conn.ClientID] {
+		if conn != c {
+			continue
+		}
+		if len(manager.connectionsByID[c.ClientID]) == 1 {
+			delete(manager.connectionsByID, c.ClientID)
+		} else {
+			manager.connectionsByID[c.ClientID] = append(
+				manager.connectionsByID[c.ClientID][:i], manager.connectionsByID[c.ClientID][i+1:]...)
+		}
+		break
+	}
 }
 
 func (manager *ConnectionManager) _sendNotificationsForNewMessage(messageDB *dbmodels.Message, messageRMQ *servicemodels.RMQMessage) {
@@ -158,7 +191,7 @@ func (manager *ConnectionManager) ProcessInputMessage(conn *connection.WSConnect
 }
 
 func (manager *ConnectionManager) ProcessRMQMessage(msg []byte) {
-	fmt.Println("Received message from message queue:", string(msg))
+	//fmt.Println("Received message from message queue:", string(msg))
 	// run each process in a new coroutine
 	go func() {
 		parsedMsg := servicemodels.RMQMessage{}
@@ -170,7 +203,7 @@ func (manager *ConnectionManager) ProcessRMQMessage(msg []byte) {
 }
 
 func (manager *ConnectionManager) ProcessRMQNoti(msg []byte) {
-	fmt.Println("Received message from noti queue:", string(msg))
+	// fmt.Println("Received message from noti queue:", string(msg))
 	// TODO: send noti to client
 }
 
@@ -180,24 +213,13 @@ func (manager *ConnectionManager) AddConnection(conn *websocket.Conn, clientID i
 		ClientID:   clientID,
 		ClientName: clientName,
 	}
-	manager.connectionsByID[c.ClientID] = append(manager.connectionsByID[c.ClientID], c)
+	manager._addConnectionsMutex(c)
 	return c
 }
 
 func (manager *ConnectionManager) RemoveConnection(c *connection.WSConnection) {
 	defer c.Conn.Close()
-	for i, conn := range manager.connectionsByID[c.ClientID] {
-		if conn != c {
-			continue
-		}
-		if len(manager.connectionsByID[c.ClientID]) == 1 {
-			delete(manager.connectionsByID, c.ClientID)
-		} else {
-			manager.connectionsByID[c.ClientID] = append(
-				manager.connectionsByID[c.ClientID][:i], manager.connectionsByID[c.ClientID][i+1:]...)
-		}
-		break
-	}
+	manager._removeConnectionsMutex(c)
 }
 
 func (manager *ConnectionManager) ValidateAndAddConnection(w http.ResponseWriter, r *http.Request, respHeader http.Header) (*connection.WSConnection, error) {
@@ -217,7 +239,8 @@ func (manager *ConnectionManager) ValidateAndAddConnection(w http.ResponseWriter
 }
 
 func (manager *ConnectionManager) SendToClient(clientID int, outputMessage *message.OutputMessage) {
-	for _, conn := range manager.connectionsByID[clientID] {
+	conns := manager._getConnectionsMutex(clientID)
+	for _, conn := range conns {
 		manager.MessageSentCounter.WithLabelValues(message.MsgTypeNotification).Inc()
 		err := conn.WriteJSONMessage(outputMessage)
 		if err != nil {
