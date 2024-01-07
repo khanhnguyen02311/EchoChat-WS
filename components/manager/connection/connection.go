@@ -35,14 +35,15 @@ func (c *WSConnection) ReadJSONMessage() (*message.InputMessage, error) {
 		if msg.Data == nil || !slices.Contains(dbmodels.DBMessageType[:2], msg.Data.Type) || msg.Data.Content == "" {
 			return nil, fmt.Errorf("invalid required fields for new message (group_id, content, type)")
 		}
+		//fmt.Printf("Received message from client %d\n", c.ClientID)
 	case message.MsgTypeNotificationRead:
 		if msg.Data == nil || !slices.Contains(dbmodels.DBNotificationType, msg.Data.Type) {
 			return nil, fmt.Errorf("invalid required fields for marking read notification (group_id, type)")
 		}
+		//fmt.Printf("Received notification mark from client %d\n", c.ClientID)
 	default:
 		return nil, fmt.Errorf("invalid message type (%q for sending new messages or %q for marking messages as seen)", message.MsgTypeMessageNew, message.MsgTypeNotificationRead)
 	}
-	fmt.Printf("Received message from client %d\n", c.ClientID)
 	return msg, nil
 }
 
